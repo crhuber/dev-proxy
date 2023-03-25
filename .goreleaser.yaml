@@ -1,0 +1,12 @@
+builds:
+  - binary: kelp
+    goos:
+      - darwin
+
+    goarch:
+      - amd64
+      - arm64
+
+    goarm:
+      - 6
+      - 7
