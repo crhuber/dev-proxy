@@ -23,23 +23,17 @@ This is roughly analogous to the way a Kubernetes Service works where kube-proxy
 
 ## How to use 
 
-### Activate
+### Add
 
-Say you have an application running on port 8080 localhost and youd like to instead connect to it by hostname dev.internal on port 80.
+Say you have an application running on port 8080 localhost and you'd like to instead connect to it by hostname dev.internal on port 80.
+First add it to your confg file by running the add command
 
 Run:
 
-`> sudo dev-proxy activate -host dev.internal -port 8080`
+`> sudo dev-proxy add -host dev.internal -port 8080`
 
 ```
-Activating dev-proxy...
-
-==> Setting up virutal ip: 127.0.0.2
-==> Port forwarding: configured
-==> Hostfile updated: dev.internal => 127.0.0.2
-==> Dev proxy: ready!
-
-[dev.internal] => 127.0.0.2:80 => 127.0.0.1:8080 
+==> Dev proxy: Config file updated!
 ```
 
 Flags:
@@ -51,6 +45,30 @@ Flags:
         local port to proxy to (default 8080)
 ```
 
+You can add up to 254 new entries.
+
+### Up 
+
+Now that you have added the config for application. Run the dev-proxy
+
+Run:
+
+`> sudo dev-proxy up`
+
+```
+Activating dev-proxy...
+
+[dev.internal]
+==> Setting up virtual ip: 127.0.0.2
+==> Updating hostfile: dev.internal
+Hostfile entry active
+dev.internal => 127.0.0.2:80 => 127.0.0.1:8080 
+
+==> Setting up port forwarding
+Port forwarding: configured
+
+Dev proxy: running!
+```
 
 ### Status
 
@@ -84,6 +102,9 @@ Removing alias: 127.0.0.2
 
 
 ## FAQ
+
+- Q: Where is the config file located
+   - A: `~/.devproxy/config.toml`
 
 - Q: Will the port-forwading rules persist across reboots?
     - A: No, all changes will be reset after a reboot

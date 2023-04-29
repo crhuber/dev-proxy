@@ -4,16 +4,25 @@ import (
 	"bufio"
 	"flag"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"net"
 	"os"
 	"os/exec"
 	"os/user"
+	"path/filepath"
 	"regexp"
 	"strings"
+
+	"github.com/pelletier/go-toml"
 )
 
-var version = "0.0.1"
+// define contansts
+const (
+	configFileName = "config.toml"
+	configDirName  = ".devproxy"
+	version        = "0.0.2"
+)
 
 func showVersion(version string) {
 	fmt.Printf("version: %s", version)
@@ -79,19 +88,19 @@ func status() {
 
 }
 
-func hostEntryExists(file *os.File, ip string, host *string) bool {
+func hostEntryExists(file *os.File, ip string, host string) bool {
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
 		line := scanner.Text()
-		if line == fmt.Sprintf("%s\t%s", ip, *host) {
-			fmt.Println("hostfile entry active")
+		if line == fmt.Sprintf("%s\t%s", ip, host) {
+			fmt.Println("Hostfile entry active")
 			return true
 		}
 	}
 	return false
 }
 
-func appendHostEntry(virtualIp string, host *string) {
+func appendHostEntry(virtualIp string, host string) {
 	// Read host file
 	file, err := os.OpenFile("/etc/hosts", os.O_APPEND|os.O_RDWR, 0644)
 	if err != nil {
@@ -103,13 +112,13 @@ func appendHostEntry(virtualIp string, host *string) {
 		return
 	}
 
-	hostEntry := fmt.Sprintf("\n%s\t%s", virtualIp, *host)
+	hostEntry := fmt.Sprintf("\n%s\t%s", virtualIp, host)
 	_, err = file.WriteString(hostEntry)
 	if err != nil {
 		fmt.Println("Error writing to file:", err)
 		log.Fatal(err)
 	}
-	fmt.Printf("==> Hostfile updated: %s => %s\n", *host, virtualIp)
+	fmt.Printf("==> Hostfile updated: %s => %s\n", host, virtualIp)
 }
 
 func getNextAvailableIP() (string, error) {
@@ -194,31 +203,172 @@ func removeLo0Aliases() error {
 	return nil
 }
 
-func activate(host *string, port *int) {
-	fmt.Println("Activating dev-proxy...")
-	fmt.Println("")
+func writeTomlConfig(hostname string, port int) error {
+	var usr *user.User
+	var err error
 
-	// get next available virtual ip
-	virtualIp, err := getNextAvailableIP()
+	// get the config file from the current user that ran sudo
+	sudoUser := os.Getenv("SUDO_USER")
+	if sudoUser != "" {
+		usr, err = user.Lookup(sudoUser)
+		if err != nil {
+			return fmt.Errorf("failed to get the sudo user: %w", err)
+		}
+	} else {
+		usr, err = user.Current()
+		if err != nil {
+			return fmt.Errorf("failed to get the current user: %w", err)
+		}
+	}
+
+	configDir := filepath.Join(usr.HomeDir, ".devproxy")
+	configFile := filepath.Join(configDir, "config.toml")
+
+	err = os.MkdirAll(configDir, 0755)
 	if err != nil {
-		fmt.Println("Error:", err)
+		return fmt.Errorf("failed to create directory: %w", err)
+	}
+
+	var config *toml.Tree
+	if _, err := os.Stat(configFile); os.IsNotExist(err) {
+		config, _ = toml.Load("")
+	} else if err != nil {
+		return fmt.Errorf("failed to stat config file: %w", err)
+	} else {
+		configBytes, err := ioutil.ReadFile(configFile)
+		if err != nil {
+			return fmt.Errorf("failed to read config file: %w", err)
+		}
+
+		config, err = toml.LoadBytes(configBytes)
+		if err != nil {
+			return fmt.Errorf("failed to parse config file: %w", err)
+		}
+	}
+
+	hostnamePrefix := strings.Split(hostname, ".")[0]
+
+	// find the section index for the hostname
+	sectionIndex := -1
+	sections := config.Keys()
+	for i, section := range sections {
+		if section == hostnamePrefix {
+			sectionIndex = i
+			break
+		}
+	}
+
+	if sectionIndex == -1 {
+		sectionIndex = len(sections)
+	}
+
+	// use the section index to find the next available ip
+	// find the next available IPv4 address
+	baseIP := net.ParseIP("127.0.0.1")
+
+	// increment the last IP address and return it as a string
+	if baseIP.To4()[3] == 255 {
+		return fmt.Errorf("No available IP left")
+	}
+	nextIP := net.IPv4(baseIP.To4()[0], baseIP.To4()[1], baseIP.To4()[2], baseIP.To4()[3]+byte(sectionIndex)+1)
+
+	config.Set(hostnamePrefix+".port", int64(port))
+	config.Set(hostnamePrefix+".hostname", hostname)
+	config.Set(hostnamePrefix+".virtualIP", nextIP.String())
+	configString, err := config.ToTomlString()
+	if err != nil {
+		return fmt.Errorf("failed to convert config to string: %w", err)
+	}
+
+	err = ioutil.WriteFile(configFile, []byte(configString), 0644)
+	if err != nil {
+		return fmt.Errorf("failed to write config file: %w", err)
+	}
+	fmt.Println("==> Dev proxy: Config file updated!")
+
+	return nil
+}
+
+func readTomlConfig() (*toml.Tree, error) {
+	var usr *user.User
+	var err error
+
+	// get the config file from the current user that ran sudo
+	sudoUser := os.Getenv("SUDO_USER")
+	if sudoUser != "" {
+		usr, err = user.Lookup(sudoUser)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get the sudo user: %w", err)
+		}
+	} else {
+		usr, err = user.Current()
+		if err != nil {
+			return nil, fmt.Errorf("failed to get the current user: %w", err)
+		}
+	}
+
+	configDir := filepath.Join(usr.HomeDir, ".devproxy")
+	configFile := filepath.Join(configDir, "config.toml")
+
+	configBytes, err := ioutil.ReadFile(configFile)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read config file: %w", err)
+	}
+
+	config, err := toml.LoadBytes(configBytes)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse config file: %w", err)
+	}
+
+	return config, nil
+}
+
+func up() {
+	fmt.Println("Activating dev-proxy...")
+
+	config, err := readTomlConfig()
+	if err != nil {
+		log.Fatal(err.Error())
+
+	}
+	// if there are no keys in the config file, exit
+	if len(config.Keys()) == 0 {
+		log.Fatal("==> Dev proxy: not configured. Run dev-proxy add --help for more info")
 		return
 	}
-	fmt.Println("==> Setting up virutal ip:", virtualIp)
 
-	// Create an alias for virtualIP to point to loopback:
-	_, err = exec.Command("ifconfig", "lo0", "alias", virtualIp).Output()
-	if err != nil {
-		fmt.Println("Error creating alias for loopback interface")
-		log.Fatal(err.Error())
+	redirectionRules := ""
+	for _, key := range config.Keys() {
+		port := config.Get(key + ".port")
+		hostname := config.Get(key + ".hostname")
+		virtualIp := config.Get(key + ".virtualIP")
+		fmt.Printf("\n[%s]\n", hostname)
+		fmt.Printf("==> Setting up virtual ip: %s\n", virtualIp)
+
+		// Create an alias for virtualIP to point to loopback:
+		_, err = exec.Command("ifconfig", "lo0", "alias", virtualIp.(string)).Output()
+		if err != nil {
+			fmt.Println("Error creating alias for loopback interface")
+			log.Fatal(err.Error())
+		}
+
+		// update hostfile
+		fmt.Println("==> Updating hostfile:", hostname)
+		appendHostEntry(virtualIp.(string), hostname.(string))
+		fmt.Printf("%s => %s:80 => 127.0.0.1:%d \n", hostname, virtualIp, port)
+
+		// Create a port forwarding rule to forward traffic destined for virtualIp:80 to be redirected to local application port
+		// default port forward rules
+		// nat-anchor "com.apple/*" all
+		// rdr-anchor "com.apple/*" all
+		redirectStr := fmt.Sprintf("rdr pass inet proto tcp from any to %s port 80 -> 127.0.0.1 port %d\n", virtualIp, port)
+		redirectionRules += redirectStr
 	}
 
-	// Create a port forwarding rule to forward traffic destined for virtualIp:80 to be redirected to local application port
-	// default port forward rules
-	// nat-anchor "com.apple/*" all
-	// rdr-anchor "com.apple/*" all
-	redirectStr := fmt.Sprintf("rdr pass inet proto tcp from any to %s port 80 -> 127.0.0.1 port %d", virtualIp, *port)
-	redirectCmd := exec.Command("echo", redirectStr)
+	// execute port forwarding rule
+	fmt.Println("")
+	fmt.Println("==> Setting up port forwarding")
+	redirectCmd := exec.Command("echo", redirectionRules)
 	pfCmd := exec.Command("pfctl", "-ef", "-")
 
 	// Get the pipe of Stdout from eco command and assign it
@@ -241,20 +391,15 @@ func activate(host *string, port *int) {
 	_, _ = pfCmd.Output()
 	// sometimes pfctl -ef - returns exitcode 1 even if theres no error
 	// dont exit fatal here
-	fmt.Println("==> Port forwarding: configured")
+	fmt.Println("Port forwarding: configured")
 
-	// update hostfile
-	appendHostEntry(virtualIp, host)
+	fmt.Println("\nDev proxy: running!")
 
-	fmt.Println("==> Dev proxy: ready!")
-
-	fmt.Printf("\n[%s] => %s:80 => 127.0.0.1:%d \n", *host, virtualIp, *port)
 }
 
 // Show help menu
 func showHelp() {
-	fmt.Println("Usage: dev-proxy [activate|status|reset|version]")
-	fmt.Println("Flags for 'activate' command:")
+	fmt.Println("Usage: dev-proxy [add|status|reset|up|version]")
 	flag.PrintDefaults()
 }
 
@@ -268,19 +413,24 @@ func main() {
 	}
 
 	switch os.Args[1] {
-	case "activate":
-		if !isRoot() {
-			log.Fatal("dev-proxy activate needs to be run as sudo")
-		}
-		activateCmd := flag.NewFlagSet("activate", flag.ExitOnError)
-		host := activateCmd.String("host", "dev.internal", "hostname that will resolve to a virtual ip")
-		port := activateCmd.Int("port", 8080, "local port to proxy to")
-		err := activateCmd.Parse(os.Args[2:])
+	case "add":
+		addCmd := flag.NewFlagSet("activate", flag.ExitOnError)
+		host := addCmd.String("host", "dev.internal", "hostname that will resolve to a virtual ip")
+		port := addCmd.Int("port", 8080, "local port to proxy to")
+		err := addCmd.Parse(os.Args[2:])
 		if err != nil {
 			fmt.Println(err)
 		}
-		activate(host, port)
+		err = writeTomlConfig(*host, *port)
+		if err != nil {
+			fmt.Println("Error:", err)
+		}
 
+	case "up":
+		if !isRoot() {
+			log.Fatal("dev-proxy up needs to be run as sudo")
+		}
+		up()
 	case "status":
 		if !isRoot() {
 			log.Fatal("dev-proxy status needs to be run as sudo")
