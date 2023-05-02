@@ -208,17 +208,9 @@ func writeTomlConfig(hostname string, port int) error {
 	var err error
 
 	// get the config file from the current user that ran sudo
-	sudoUser := os.Getenv("SUDO_USER")
-	if sudoUser != "" {
-		usr, err = user.Lookup(sudoUser)
-		if err != nil {
-			return fmt.Errorf("failed to get the sudo user: %w", err)
-		}
-	} else {
-		usr, err = user.Current()
-		if err != nil {
-			return fmt.Errorf("failed to get the current user: %w", err)
-		}
+	usr, err = user.Lookup(os.ExpandEnv("$USER"))
+	if err != nil {
+		return fmt.Errorf("failed to get the sudo user: %w", err)
 	}
 
 	configDir := filepath.Join(usr.HomeDir, ".devproxy")
