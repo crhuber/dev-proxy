@@ -21,11 +21,35 @@ import (
 const (
 	configFileName = "config.toml"
 	configDirName  = ".devproxy"
-	version        = "0.0.2"
+	version        = "0.0.4"
+	Reset          = "\033[0m"
+	Red            = "\033[31m"
+	Green          = "\033[32m"
+	Yellow         = "\033[33m"
+	Blue           = "\033[34m"
+	Purple         = "\033[35m"
+	Cyan           = "\033[36m"
+	Gray           = "\033[37m"
+	White          = "\033[97m"
 )
 
 func showVersion(version string) {
 	fmt.Printf("version: %s", version)
+}
+
+func printLnColor(text string, colorChoice string) {
+	switch colorChoice {
+	case "red":
+		fmt.Println(Red + text + Reset)
+	case "green":
+		fmt.Println(Green + text + Reset)
+	case "yellow":
+		fmt.Println(Yellow + text + Reset)
+	case "blue":
+		fmt.Println(Blue + text + Reset)
+	default:
+		fmt.Println(White + text + Reset)
+	}
 }
 
 func isRoot() bool {
@@ -45,7 +69,7 @@ func status() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	fmt.Println("==> Hosts file:")
+	printLnColor("==> Hosts file:", "green")
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -57,7 +81,7 @@ func status() {
 	// check loopback
 	// use regular expression to match IP addresses in the output
 	inetRe := regexp.MustCompile(`inet\s+127\.0\.0\.\d+`)
-	fmt.Println("\n==> Loopback interface lo0 addresses:")
+	printLnColor("\n==> Loopback interface lo0 addresses:", "green")
 	ifCmdOutput, err := exec.Command("ifconfig", "lo0").Output()
 	if err != nil {
 		log.Fatal(err)
@@ -73,7 +97,7 @@ func status() {
 	}
 
 	// check pftctl command
-	fmt.Println("\n==> Port forwarding rules:")
+	printLnColor("\n==> Port forwarding rules:", "green")
 	pfCtlCmdOutput, err := exec.Command("pfctl", "-s", "nat").Output()
 	if err != nil {
 		log.Fatal(err)
@@ -118,7 +142,7 @@ func appendHostEntry(virtualIp string, host string) {
 		fmt.Println("Error writing to file:", err)
 		log.Fatal(err)
 	}
-	fmt.Printf("==> Hostfile updated: %s => %s\n", host, virtualIp)
+	printLnColor(fmt.Sprintf("==> Hostfile updated: %s => %s\n", host, virtualIp), "green")
 }
 
 func getNextAvailableIP() (string, error) {
@@ -276,7 +300,7 @@ func writeTomlConfig(hostname string, port int) error {
 	if err != nil {
 		return fmt.Errorf("failed to write config file: %w", err)
 	}
-	fmt.Println("==> Dev proxy: Config file updated!")
+	printLnColor("==> Dev proxy: Config file updated!", "green")
 
 	return nil
 }
@@ -316,7 +340,7 @@ func readTomlConfig() (*toml.Tree, error) {
 }
 
 func up() {
-	fmt.Println("Activating dev-proxy...")
+	printLnColor("Activating dev-proxy...", "white")
 
 	config, err := readTomlConfig()
 	if err != nil {
@@ -334,8 +358,9 @@ func up() {
 		port := config.Get(key + ".port")
 		hostname := config.Get(key + ".hostname")
 		virtualIp := config.Get(key + ".virtualIP")
-		fmt.Printf("\n[%s]\n", hostname)
-		fmt.Printf("==> Setting up virtual ip: %s\n", virtualIp)
+		printLnColor(fmt.Sprintf("\n[%s]", hostname), "blue")
+		printLnColor("==> Setting up virtual ip", "green")
+		fmt.Printf("ip: %s\n", virtualIp)
 
 		// Create an alias for virtualIP to point to loopback:
 		_, err = exec.Command("ifconfig", "lo0", "alias", virtualIp.(string)).Output()
@@ -345,10 +370,12 @@ func up() {
 		}
 
 		// update hostfile
-		fmt.Println("==> Updating hostfile:", hostname)
+		printLnColor(fmt.Sprintf("==> Updating hostfile: %s", hostname), "green")
 		appendHostEntry(virtualIp.(string), hostname.(string))
-		fmt.Printf("%s => %s:80 => 127.0.0.1:%d \n", hostname, virtualIp, port)
+		fmt.Printf("%s => %s", hostname, virtualIp)
 
+		printLnColor("\n==> Configuring port fowarding", "green")
+		fmt.Printf("%s => %s:80 => 127.0.0.1:%d \n", hostname, virtualIp, port)
 		// Create a port forwarding rule to forward traffic destined for virtualIp:80 to be redirected to local application port
 		// default port forward rules
 		// nat-anchor "com.apple/*" all
@@ -358,8 +385,7 @@ func up() {
 	}
 
 	// execute port forwarding rule
-	fmt.Println("")
-	fmt.Println("==> Setting up port forwarding")
+	printLnColor("==> Applying rules", "green")
 	redirectCmd := exec.Command("echo", redirectionRules)
 	pfCmd := exec.Command("pfctl", "-ef", "-")
 
@@ -385,7 +411,7 @@ func up() {
 	// dont exit fatal here
 	fmt.Println("Port forwarding: configured")
 
-	fmt.Println("\nDev proxy: running!")
+	printLnColor("\ndev-proxy: running!", "white")
 
 }
 
@@ -406,6 +432,9 @@ func main() {
 
 	switch os.Args[1] {
 	case "add":
+		if isRoot() {
+			log.Fatal("dev-proxy add should not be run as sudo")
+		}
 		addCmd := flag.NewFlagSet("activate", flag.ExitOnError)
 		host := addCmd.String("host", "dev.internal", "hostname that will resolve to a virtual ip")
 		port := addCmd.Int("port", 8080, "local port to proxy to")
