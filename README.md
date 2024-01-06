@@ -1,12 +1,12 @@
 # Dev-Proxy
 
-Simple port forwarding for localhost development. 
+Simple port forwarding for localhost development.
 
 
 ## What is it
 
-Dev-Proxy makes developing on localhost easy by assiging a dns hostname and virtual ip for your localhost project. 
-No more trying to remember what localhost port your local dev environment is running on: connect to your easy to remember hostname on port 80 
+Dev-Proxy makes developing on localhost easy by assiging a dns hostname and virtual ip for your localhost project.
+No more trying to remember what localhost port your local dev environment is running on: connect to your easy to remember hostname on port 80
 Skip complicated nginx port-forwarding or dnsmasq configs.
 
 
@@ -21,7 +21,7 @@ Dev-proxy does the following things
 This is roughly analogous to the way a Kubernetes Service works where kube-proxy sets up a virtual ip, sets up ip tables rules and assigns a hostname in core-dns for the virtual ip.
 
 
-## How to use 
+## How to use
 
 ### Add
 
@@ -47,7 +47,7 @@ Flags:
 
 You can add up to 254 new entries.
 
-### Up 
+### Up
 
 Now that you have added the config for application. Run the dev-proxy
 
@@ -62,7 +62,7 @@ Activating dev-proxy...
 ==> Setting up virtual ip: 127.0.0.2
 ==> Updating hostfile: dev.internal
 Hostfile entry active
-dev.internal => 127.0.0.2:80 => 127.0.0.1:8080 
+dev.internal => 127.0.0.2:80 => 127.0.0.1:8080
 
 ==> Setting up port forwarding
 Port forwarding: configured
@@ -100,6 +100,14 @@ Once you are done you can remove the loopback aliases by running
 Removing alias: 127.0.0.2
 ```
 
+### Run at Startup
+
+```
+sudo cp io.intra.devproxy.plist /Library/LaunchDaemons/
+sudo launchctl load -w /Library/LaunchDaemons/io.intra.devproxy.plist
+sudo launchctl run -w /Library/LaunchDaemons/io.intra.devproxy.plist
+```
+
 
 ## FAQ
 
@@ -125,6 +133,6 @@ Removing alias: 127.0.0.2
 
 ## Contributing
 
-If you find bugs, please open an issue first. 
+If you find bugs, please open an issue first.
 
 If you have feature requests, I probably will not honor it because this project is being built mostly to suit my personal workflow and preferences.
