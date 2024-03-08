@@ -12,4 +12,4 @@ builds:
       - 7
 
     env:
-        - CGO_ENABLED=1  #see https://github.com/golang/go/issues/24383 
+      - CGO_ENABLED=1  #see https://github.com/golang/go/issues/24383

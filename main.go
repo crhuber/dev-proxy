@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"flag"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"net"
 	"os"
@@ -21,7 +20,8 @@ import (
 const (
 	configFileName = "config.toml"
 	configDirName  = ".devproxy"
-	version        = "0.0.4"
+	virtualPort    = 80
+	version        = "0.0.5"
 	Reset          = "\033[0m"
 	Red            = "\033[31m"
 	Green          = "\033[32m"
@@ -34,7 +34,7 @@ const (
 )
 
 func showVersion(version string) {
-	fmt.Printf("version: %s", version)
+	fmt.Printf("version: %s \n", version)
 }
 
 func printLnColor(text string, colorChoice string) {
@@ -58,6 +58,24 @@ func isRoot() bool {
 		log.Fatalf("Unable to get current user: %s", err)
 	}
 	return currentUser.Username == "root"
+}
+
+func show() {
+	config, err := readTomlConfig()
+	if err != nil {
+		log.Fatal(err.Error())
+
+	}
+
+	for _, key := range config.Keys() {
+		port := config.Get(key + ".port")
+		hostname := config.Get(key + ".hostname")
+		virtualIp := config.Get(key + ".virtualIP")
+		printLnColor(fmt.Sprintf("\n[%s]", hostname), "blue")
+		fmt.Printf("localIp: 127.0.0.1:%d \n", port)
+		fmt.Printf("virtualIp: %s:%d \n", virtualIp, virtualPort)
+	}
+
 }
 
 func status() {
@@ -117,7 +135,7 @@ func hostEntryExists(file *os.File, ip string, host string) bool {
 	for scanner.Scan() {
 		line := scanner.Text()
 		if line == fmt.Sprintf("%s\t%s", ip, host) {
-			fmt.Println("Hostfile entry active")
+			fmt.Printf("entry `%s %s` already exists \n", ip, host)
 			return true
 		}
 	}
@@ -136,13 +154,14 @@ func appendHostEntry(virtualIp string, host string) {
 		return
 	}
 
+	// write to file
 	hostEntry := fmt.Sprintf("\n%s\t%s", virtualIp, host)
 	_, err = file.WriteString(hostEntry)
 	if err != nil {
 		fmt.Println("Error writing to file:", err)
 		log.Fatal(err)
 	}
-	printLnColor(fmt.Sprintf("==> Hostfile updated: %s => %s\n", host, virtualIp), "green")
+	fmt.Printf("Added %s %s\n", host, virtualIp)
 }
 
 func getNextAvailableIP() (string, error) {
@@ -183,7 +202,7 @@ func getNextAvailableIP() (string, error) {
 
 	// increment the last IP address and return it as a string
 	if lastIP.To4()[3] == 255 {
-		return "", fmt.Errorf("No available IP address found")
+		return "", fmt.Errorf("no available IP address found")
 	}
 	nextIP := net.IPv4(lastIP.To4()[0], lastIP.To4()[1], lastIP.To4()[2], lastIP.To4()[3]+1)
 	return nextIP.String(), nil
@@ -217,10 +236,10 @@ func removeLo0Aliases() error {
 
 	// remove each alias using the ifconfig command
 	for _, alias := range aliases {
-		fmt.Printf("Removing alias: %s\n", alias)
+		fmt.Printf("Removing alias: %s \n", alias)
 		cmd := exec.Command("ifconfig", "lo0", "-alias", alias)
 		if err := cmd.Run(); err != nil {
-			return fmt.Errorf("Error removing alias %v: %v", alias, err)
+			return fmt.Errorf("error removing alias %v: %v", alias, err)
 		}
 	}
 
@@ -251,7 +270,7 @@ func writeTomlConfig(hostname string, port int) error {
 	} else if err != nil {
 		return fmt.Errorf("failed to stat config file: %w", err)
 	} else {
-		configBytes, err := ioutil.ReadFile(configFile)
+		configBytes, err := os.ReadFile(configFile)
 		if err != nil {
 			return fmt.Errorf("failed to read config file: %w", err)
 		}
@@ -284,7 +303,7 @@ func writeTomlConfig(hostname string, port int) error {
 
 	// increment the last IP address and return it as a string
 	if baseIP.To4()[3] == 255 {
-		return fmt.Errorf("No available IP left")
+		return fmt.Errorf("no available IP left")
 	}
 	nextIP := net.IPv4(baseIP.To4()[0], baseIP.To4()[1], baseIP.To4()[2], baseIP.To4()[3]+byte(sectionIndex)+1)
 
@@ -296,7 +315,7 @@ func writeTomlConfig(hostname string, port int) error {
 		return fmt.Errorf("failed to convert config to string: %w", err)
 	}
 
-	err = ioutil.WriteFile(configFile, []byte(configString), 0644)
+	err = os.WriteFile(configFile, []byte(configString), 0644)
 	if err != nil {
 		return fmt.Errorf("failed to write config file: %w", err)
 	}
@@ -325,8 +344,9 @@ func readTomlConfig() (*toml.Tree, error) {
 
 	configDir := filepath.Join(usr.HomeDir, ".devproxy")
 	configFile := filepath.Join(configDir, "config.toml")
+	fmt.Printf("Config: %s \n", configFile)
 
-	configBytes, err := ioutil.ReadFile(configFile)
+	configBytes, err := os.ReadFile(configFile)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read config file: %w", err)
 	}
@@ -360,7 +380,7 @@ func up() {
 		virtualIp := config.Get(key + ".virtualIP")
 		printLnColor(fmt.Sprintf("\n[%s]", hostname), "blue")
 		printLnColor("==> Setting up virtual ip", "green")
-		fmt.Printf("ip: %s\n", virtualIp)
+		fmt.Printf("ip: %s \n", virtualIp)
 
 		// Create an alias for virtualIP to point to loopback:
 		_, err = exec.Command("ifconfig", "lo0", "alias", virtualIp.(string)).Output()
@@ -372,15 +392,14 @@ func up() {
 		// update hostfile
 		printLnColor(fmt.Sprintf("==> Updating hostfile: %s", hostname), "green")
 		appendHostEntry(virtualIp.(string), hostname.(string))
-		fmt.Printf("%s => %s", hostname, virtualIp)
 
-		printLnColor("\n==> Configuring port fowarding", "green")
-		fmt.Printf("%s => %s:80 => 127.0.0.1:%d \n", hostname, virtualIp, port)
+		printLnColor("==> Configuring port fowarding", "green")
+		fmt.Printf("%s => %s:%d => 127.0.0.1:%d \n", hostname, virtualIp, virtualPort, port)
 		// Create a port forwarding rule to forward traffic destined for virtualIp:80 to be redirected to local application port
 		// default port forward rules
 		// nat-anchor "com.apple/*" all
 		// rdr-anchor "com.apple/*" all
-		redirectStr := fmt.Sprintf("rdr pass inet proto tcp from any to %s port 80 -> 127.0.0.1 port %d\n", virtualIp, port)
+		redirectStr := fmt.Sprintf("rdr pass inet proto tcp from any to %s port %d -> 127.0.0.1 port %d\n", virtualIp, virtualPort, port)
 		redirectionRules += redirectStr
 	}
 
@@ -409,7 +428,7 @@ func up() {
 	_, _ = pfCmd.Output()
 	// sometimes pfctl -ef - returns exitcode 1 even if theres no error
 	// dont exit fatal here
-	fmt.Println("Port forwarding: configured")
+	fmt.Println("port forwarding: configured")
 
 	printLnColor("\ndev-proxy: running!", "white")
 
@@ -417,7 +436,7 @@ func up() {
 
 // Show help menu
 func showHelp() {
-	fmt.Println("Usage: dev-proxy [add|status|reset|up|version]")
+	fmt.Println("Usage: dev-proxy [add|show|status|reset|up|version]")
 	flag.PrintDefaults()
 }
 
@@ -447,23 +466,30 @@ func main() {
 			fmt.Println("Error:", err)
 		}
 
+	case "show":
+		show()
+
 	case "up":
 		if !isRoot() {
 			log.Fatal("dev-proxy up needs to be run as sudo")
 		}
 		up()
+
 	case "status":
 		if !isRoot() {
 			log.Fatal("dev-proxy status needs to be run as sudo")
 		}
 		status()
+
 	case "reset":
 		if !isRoot() {
 			log.Fatal("dev-proxy reset needs to be run as sudo")
 		}
 		reset()
+
 	case "version":
 		showVersion(version)
+
 	default:
 		showHelp()
 	}

@@ -107,7 +107,11 @@ sudo cp io.intra.devproxy.plist /Library/LaunchDaemons/
 sudo launchctl load -w /Library/LaunchDaemons/io.intra.devproxy.plist
 sudo launchctl run -w /Library/LaunchDaemons/io.intra.devproxy.plist
 ```
+Edit config for root
 
+```
+nano /var/root/.devproxy/config.toml
+```
 
 ## FAQ
 
