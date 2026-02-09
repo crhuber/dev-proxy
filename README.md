@@ -101,16 +101,13 @@ Removing alias: 127.0.0.2
 ```
 
 ### Run at Startup
+Edit io.intra.devproxy.plist
+Replace YOUR_USER with your username, then:
 
 ```
 sudo cp io.intra.devproxy.plist /Library/LaunchDaemons/
 sudo launchctl load -w /Library/LaunchDaemons/io.intra.devproxy.plist
 sudo launchctl run -w /Library/LaunchDaemons/io.intra.devproxy.plist
-```
-Edit config for root
-
-```
-nano /var/root/.devproxy/config.toml
 ```
 
 ## FAQ
