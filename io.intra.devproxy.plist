@@ -6,9 +6,14 @@
 	<string>io.intra.devproxy</string>
 	<key>ProgramArguments</key>
 	<array>
-		<string>/Users/username/scripts/devproxy</string>
+		<string>/Users/YOUR_USER/scripts/devproxy</string>
 		<string>up</string>
 	</array>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>HOME</key>
+        <string>/Users/YOUR_USER</string>
+    </dict>
     <key>RunAtLoad</key>
     <true/>
     <key>StandardErrorPath</key>
