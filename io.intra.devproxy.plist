@@ -13,6 +13,8 @@
     <dict>
         <key>HOME</key>
         <string>/Users/YOUR_USER</string>
+        <key>SUDO_USER</key>
+        <string>YOUR_USER</string>
     </dict>
     <key>RunAtLoad</key>
     <true/>
